@@ -1,0 +1,182 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Screenshot Service",
+    "description": "Takes screenshots of web pages. Supports full-page capture and targeting a specific CSS selector element.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://YOUR_CONTAINER_APP_FQDN",
+      "description": "Azure Container Apps production endpoint — replace with your FQDN after first deploy"
+    }
+  ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "paths": {
+    "/screenshot": {
+      "post": {
+        "operationId": "takeScreenshot",
+        "summary": "Take a screenshot of a web page",
+        "description": "Navigates to the given URL with a headless Chromium browser and returns a PNG screenshot encoded as base64. Use fullPage=true for the entire page, or provide a CSS selector to capture a specific element.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreenshotRequest"
+              },
+              "examples": {
+                "fullPage": {
+                  "summary": "Full page screenshot",
+                  "value": {
+                    "url": "https://example.com",
+                    "fullPage": true
+                  }
+                },
+                "selectorCapture": {
+                  "summary": "Capture a specific element",
+                  "value": {
+                    "url": "https://example.com",
+                    "selector": "#main-chart",
+                    "waitFor": "networkidle"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Screenshot captured successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ScreenshotResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request parameters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid API key" },
+          "404": {
+            "description": "CSS selector not found on the page",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Screenshot failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key passed as a Bearer token in the Authorization header"
+      }
+    },
+    "schemas": {
+      "ScreenshotRequest": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Fully qualified URL to screenshot (http/https only)",
+            "example": "https://example.com"
+          },
+          "fullPage": {
+            "type": "boolean",
+            "default": true,
+            "description": "Capture the full scrollable page. Ignored when selector is provided."
+          },
+          "selector": {
+            "type": "string",
+            "description": "CSS selector of a specific element to capture instead of the full page",
+            "example": "#dashboard-chart"
+          },
+          "width": {
+            "type": "integer",
+            "default": 1280,
+            "minimum": 320,
+            "maximum": 3840,
+            "description": "Viewport width in pixels"
+          },
+          "height": {
+            "type": "integer",
+            "default": 800,
+            "minimum": 240,
+            "maximum": 2160,
+            "description": "Viewport height in pixels"
+          },
+          "waitFor": {
+            "type": "string",
+            "enum": ["load", "domcontentloaded", "networkidle"],
+            "default": "load",
+            "description": "Navigation wait condition. Use networkidle for JS-heavy SPAs."
+          }
+        }
+      },
+      "ScreenshotResponse": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "selector": { "type": "string", "nullable": true },
+          "fullPage": { "type": "boolean" },
+          "width": { "type": "integer" },
+          "height": { "type": "integer" },
+          "imageBase64": { "type": "string", "description": "Base64-encoded PNG" },
+          "mimeType": { "type": "string", "example": "image/png" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,136 @@
+# apps/screenshot-svc/azure-pipelines.yml
+#
+# Builds the screenshot-svc TypeScript app, pushes to shared ACR,
+# and deploys to the shared Container Apps environment.
+#
+# ── Variable group (link in ADO › Pipelines › Library) ───────────────────────
+#   Group name: container-apps-shared
+#     AZURE_RESOURCE_GROUP    = rg-container-apps
+#     ACR_NAME                = rccontainerapps
+#     CA_ENV_NAME             = cae-shared
+#     STORAGE_ACCOUNT_NAME    = rccontainerappsstr
+#
+# ── Per-pipeline variables (set on this pipeline only) ───────────────────────
+#   API_KEY   = <bearer token>   (Secret ✓)
+#
+# ── Service connection ────────────────────────────────────────────────────────
+#   azure-service-connection   (created once via bootstrap.sh, shared by all pipelines)
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - apps/screenshot-svc/**
+      - infra/screenshot-svc/**
+
+pr: none
+
+variables:
+  - group: container-apps-shared
+  - name: APP_NAME
+    value: screenshot-svc
+  - name: IMAGE_TAG
+    value: $(Build.BuildId)
+  - name: ACR_SERVER
+    value: $(ACR_NAME).azurecr.io
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  # ── Stage 1: Build & Push ───────────────────────────────────────────────────
+  - stage: Build
+    displayName: "Build & Push"
+    jobs:
+      - job: BuildAndPush
+        displayName: "tsc → Docker → ACR"
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: "Docker build & push to $(ACR_SERVER)"
+            inputs:
+              azureSubscription: azure-service-connection
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: apps/screenshot-svc
+              inlineScript: |
+                IMAGE="$(ACR_SERVER)/$(APP_NAME):$(IMAGE_TAG)"
+
+                az acr login --name "$(ACR_NAME)"
+
+                docker build \
+                  --tag "$IMAGE" \
+                  --label "build=$(Build.BuildId)" \
+                  --label "commit=$(Build.SourceVersion)" \
+                  .
+
+                docker push "$IMAGE"
+                docker tag "$IMAGE" "$(ACR_SERVER)/$(APP_NAME):latest"
+                docker push "$(ACR_SERVER)/$(APP_NAME):latest"
+
+                echo "✅ Pushed: $IMAGE"
+
+  # ── Stage 2: Deploy ─────────────────────────────────────────────────────────
+  - stage: Deploy
+    displayName: "Deploy to Container Apps"
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployACA
+        displayName: "Bicep deploy + smoke test"
+        environment: production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: AzureCLI@2
+                  displayName: "Bicep deploy (app-level resources)"
+                  inputs:
+                    azureSubscription: azure-service-connection
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az deployment group create \
+                        --resource-group "$(AZURE_RESOURCE_GROUP)" \
+                        --template-file "infra/screenshot-svc/main.bicep" \
+                        --parameters \
+                            imageTag="$(IMAGE_TAG)" \
+                            apiKey="$(API_KEY)" \
+                            acrName="$(ACR_NAME)" \
+                            caEnvName="$(CA_ENV_NAME)" \
+                            storageAccountName="$(STORAGE_ACCOUNT_NAME)" \
+                        --output none
+
+                      FQDN=$(az containerapp show \
+                        --name "$(APP_NAME)" \
+                        --resource-group "$(AZURE_RESOURCE_GROUP)" \
+                        --query properties.configuration.ingress.fqdn \
+                        --output tsv)
+
+                      echo "##vso[task.setvariable variable=FQDN]$FQDN"
+                      echo "✅ Deployed: https://${FQDN}"
+
+                - task: AzureCLI@2
+                  displayName: "Smoke test /health"
+                  inputs:
+                    azureSubscription: azure-service-connection
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      echo "Waiting for container start..."
+                      sleep 10
+
+                      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                        --retry 6 --retry-delay 10 \
+                        "https://$(FQDN)/health")
+
+                      if [ "$HTTP_STATUS" != "200" ]; then
+                        echo "❌ Health check failed — HTTP $HTTP_STATUS"
+                        exit 1
+                      fi
+                      echo "✅ Health check passed (HTTP $HTTP_STATUS)"

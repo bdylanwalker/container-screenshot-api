@@ -1,0 +1,71 @@
+# infra/shared/azure-pipelines.yml
+#
+# Redeploys shared infrastructure when main.bicep or main.bicepparam changes.
+# Does not touch the resource group or service principal (bootstrap.sh owns those).
+# Safe to run manually at any time — Bicep deployments are idempotent.
+#
+# Required:
+#   Service connection : azure-service-connection
+#   Pipeline variable  : AZURE_RESOURCE_GROUP = rg-container-apps
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/shared/**
+
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  RG: $(AZURE_RESOURCE_GROUP)
+
+stages:
+  - stage: ValidateAndDeploy
+    displayName: "Shared Infra — Validate & Deploy"
+    jobs:
+      - job: WhatIf
+        displayName: "Preflight (what-if)"
+        steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: "az deployment what-if"
+            inputs:
+              azureSubscription: azure-service-connection
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az deployment group what-if \
+                  --resource-group "$(RG)" \
+                  --template-file "infra/shared/main.bicep" \
+                  --parameters "infra/shared/main.bicepparam" \
+                  --result-format FullResourcePayloads
+
+      - job: Deploy
+        displayName: "Deploy"
+        dependsOn: WhatIf
+        steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: "az deployment group create"
+            inputs:
+              azureSubscription: azure-service-connection
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                OUTPUT=$(az deployment group create \
+                  --resource-group "$(RG)" \
+                  --template-file "infra/shared/main.bicep" \
+                  --parameters "infra/shared/main.bicepparam" \
+                  --output json)
+
+                echo "Outputs:"
+                echo "$OUTPUT" | python3 -c "
+import sys, json
+for k, v in json.load(sys.stdin)['properties']['outputs'].items():
+    print(f'  {k}: {v[\"value\"]}')
+"
