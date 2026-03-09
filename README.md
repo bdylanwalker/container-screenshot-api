@@ -2,6 +2,8 @@
 
 Shared Azure infrastructure + individual container app deployments.
 
+Co-authored with Claude Sonnet 4.6
+
 ## Structure
 
 ```
