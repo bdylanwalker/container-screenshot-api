@@ -123,14 +123,23 @@ stages:
                     scriptLocation: inlineScript
                     inlineScript: |
                       echo "Waiting for container start..."
-                      sleep 10
+                      sleep 30
 
-                      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-                        --retry 6 --retry-delay 10 \
-                        "https://$(FQDN)/health")
+                      HEALTH_URL="https://$(FQDN)/health"
+                      echo "Hitting: $HEALTH_URL"
+
+                      HTTP_STATUS=$(curl -s -o /tmp/health_response.txt -w "%{http_code}" \
+                          --retry 8 \
+                          --retry-delay 10 \
+                          --retry-all-errors \
+                          --max-time 30 \
+                          "$HEALTH_URL")
+
+                      echo "Response body: $(cat /tmp/health_response.txt)"
+                      echo "HTTP status: $HTTP_STATUS"
 
                       if [ "$HTTP_STATUS" != "200" ]; then
                         echo "❌ Health check failed — HTTP $HTTP_STATUS"
                         exit 1
                       fi
-                      echo "✅ Health check passed (HTTP $HTTP_STATUS)"
+                      echo "✅ Health check passed"
