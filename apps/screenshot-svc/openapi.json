@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://YOUR_CONTAINER_APP_FQDN",
+      "url": "https://screenshot-svc.agreeabledesert-e5bc9445.eastus.azurecontainerapps.io",
       "description": "Azure Container Apps production endpoint — replace with your FQDN after first deploy"
     }
   ],
