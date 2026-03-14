@@ -56,10 +56,15 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       registries: [
         {
           server: acrLoginServer
-          identity: 'system'
+          username: listCredentials(resourceId('Microsoft.ContainerRegistry/registries', acrName), '2023-07-01').username
+          passwordSecretRef: 'acr-password'
         }
       ]
       secrets: [
+        {
+          name: 'acr-password'
+          value: listCredentials(resourceId('Microsoft.ContainerRegistry/registries', acrName), '2023-07-01').passwords[0].value
+        }
         {
           name: 'api-key'
           value: apiKey

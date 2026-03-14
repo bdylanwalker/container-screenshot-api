@@ -57,7 +57,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   tags: tags
   sku: { name: 'Basic' }
   properties: {
-    adminUserEnabled: false
+    adminUserEnabled: true
     publicNetworkAccess: 'Enabled'
     zoneRedundancy: 'Disabled'
   }
