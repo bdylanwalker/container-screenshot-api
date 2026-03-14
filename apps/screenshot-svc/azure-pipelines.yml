@@ -65,7 +65,7 @@ stages:
                   --tag "$IMAGE" \
                   --label "build=$(Build.BuildId)" \
                   --label "commit=$(Build.SourceVersion)" \
-                  .
+                  . || exit 1
 
                 docker push "$IMAGE"
                 docker tag "$IMAGE" "$(ACR_SERVER)/$(APP_NAME):latest"

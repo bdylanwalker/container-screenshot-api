@@ -30,12 +30,3 @@ USER appuser
 
 EXPOSE 3000
 CMD ["bun", "run", "dist/server.js"]
-```
-
-The middle "prod deps" stage from the original is gone — Bun's output from `bun build` is a self-contained compiled file that doesn't need `node_modules` at runtime.
-
----
-
-Also add `bun.lockb` to **`.dockerignore`**... actually leave it out of dockerignore since the Dockerfile copies it in. Add it to `.gitattributes` instead so Git treats it as binary:
-```
-bun.lockb binary diff=lockb
