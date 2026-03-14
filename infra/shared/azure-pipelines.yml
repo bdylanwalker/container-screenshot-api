@@ -57,15 +57,8 @@ stages:
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
-                OUTPUT=$(az deployment group create \
+                az deployment group create \
                   --resource-group "$(RG)" \
                   --template-file "infra/shared/main.bicep" \
                   --parameters "infra/shared/main.bicepparam" \
-                  --output json)
-
-                echo "Outputs:"
-                echo "$OUTPUT" | python3 -c "
-import sys, json
-for k, v in json.load(sys.stdin)['properties']['outputs'].items():
-    print(f'  {k}: {v[\"value\"]}')
-"
+                  --output json
