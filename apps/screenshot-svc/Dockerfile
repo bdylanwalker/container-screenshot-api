@@ -6,7 +6,7 @@ COPY package.json bun.lockb* ./
 RUN bun install --frozen-lockfile
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/playwright:v1.44.0-jammy
+FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 
 # Copy Bun binary directly from the official image — no curl, no unzip needed
 COPY --from=oven/bun:1.1-slim /usr/local/bin/bun /usr/local/bin/bun
