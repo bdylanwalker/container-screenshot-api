@@ -4,8 +4,7 @@
   "description": "Playwright screenshot service for ChatGPT Actions",
   "scripts": {
     "dev": "bun run src/server.ts",
-    "build": "bun build src/server.ts --outdir dist --target bun",
-    "start": "bun run dist/server.js"
+    "start": "bun run src/server.ts"
   },
   "dependencies": {
     "express": "^4.19.2",
