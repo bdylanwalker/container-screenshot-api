@@ -8,8 +8,8 @@ RUN bun install --frozen-lockfile
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/playwright:v1.44.0-jammy
 
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:$PATH"
+# Copy Bun binary directly from the official image — no curl, no unzip needed
+COPY --from=oven/bun:1.1-slim /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 RUN groupadd -r appuser && useradd -r -g appuser -G audio,video appuser \
- && chown -R appuser:appuser /app /root/.bun
+ && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 3000
