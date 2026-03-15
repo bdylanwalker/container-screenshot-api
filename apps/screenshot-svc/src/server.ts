@@ -222,10 +222,10 @@ app.post(
       await page.waitForLoadState('networkidle');
 
       // Explicitly wait for nav to be visible if present on the page
-      await page.waitForSelector('.c-main-navigation', {
-        state: 'visible',
-        timeout: 5000,
-      }).catch(() => {}); // silently skip if nav doesn't exist on this page
+      // await page.waitForSelector('.c-main-navigation', {
+      //   state: 'visible',
+      //   timeout: 5000,
+      // }).catch(() => {}); // silently skip if nav doesn't exist on this page
 
       // Kill transitions so screenshot catches final rendered state
       await preparePageForCapture(page);
