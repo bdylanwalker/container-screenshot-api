@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
-import { chromium, Browser, BrowserContext } from "playwright";
+import { chromium, Browser, BrowserContext, Page } from "playwright";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -72,6 +72,36 @@ function validateUrl(raw: string): string | null {
   }
 }
 
+async function autoScroll(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      const distance = 100;        // px per scroll step
+      const delay = 100;           // ms between steps
+      const maxScrollTime = 15000; // bail out after 15s
+      const start = Date.now();
+      let lastHeight = 0;
+
+      const timer = setInterval(() => {
+        window.scrollBy(0, distance);
+        const currentHeight = document.documentElement.scrollHeight;
+        const scrollTop = window.scrollY + window.innerHeight;
+
+        const timedOut = Date.now() - start > maxScrollTime;
+        const reachedBottom = scrollTop >= currentHeight;
+        const noNewContent = currentHeight === lastHeight;
+
+        if (timedOut || (reachedBottom && noNewContent)) {
+          clearInterval(timer);
+          window.scrollTo(0, 0); // scroll back to top before screenshot
+          resolve();
+        }
+
+        lastHeight = currentHeight;
+      }, delay);
+    });
+  });
+}
+
 // ── App ────────────────────────────────────────────────────────────────────────
 
 const app = express();
@@ -100,7 +130,7 @@ app.post(
       selector,
       width = VIEWPORT_DEFAULTS.width,
       height = VIEWPORT_DEFAULTS.height,
-      waitFor = "load",
+      waitFor = "networkidle",
     } = req.body as ScreenshotRequestBody;
 
     const url = validateUrl(rawUrl);
@@ -126,14 +156,22 @@ app.post(
       const page = await context.newPage();
 
       await page.goto(url, {
-        waitUntil: waitFor as (typeof VALID_WAIT_FOR)[number],
+        waitUntil: "networkidle", // wait for network to go quiet
         timeout: TIMEOUT_MS,
       });
+
+      // Wait for any JS frameworks to finish rendering
+      await page.waitForLoadState("domcontentloaded");
+      await page.waitForLoadState("networkidle");
+
+      // Give JS-heavy SPAs a moment to settle after networkidle
+      await page.waitForTimeout(1500);
 
       let imageBuffer: Buffer;
 
       if (selector) {
         const element = await page.waitForSelector(selector, {
+          state: "visible", // wait until actually visible, not just in DOM
           timeout: TIMEOUT_MS,
         });
         if (!element) {
@@ -142,9 +180,30 @@ app.post(
           } satisfies ErrorResponse);
           return;
         }
+        // Scroll element into view and wait for any lazy images inside it
+        await element.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(500);
         imageBuffer = await element.screenshot({ type: "png" });
       } else {
-        imageBuffer = await page.screenshot({ type: "png", fullPage });
+        // Scroll the full page to trigger lazy loading, then screenshot
+        await autoScroll(page);
+
+        // Wait for any images that loaded during scroll to fully render
+        await page.evaluate(async () => {
+          const images = Array.from(document.querySelectorAll("img"));
+          await Promise.allSettled(
+            images.map(
+              (img) =>
+                new Promise<void>((resolve) => {
+                  if (img.complete) return resolve();
+                  img.onload = () => resolve();
+                  img.onerror = () => resolve(); // don't block on broken images
+                }),
+            ),
+          );
+        });
+
+        imageBuffer = await page.screenshot({ type: "png", fullPage: true });
       }
 
       const response: ScreenshotResponse = {

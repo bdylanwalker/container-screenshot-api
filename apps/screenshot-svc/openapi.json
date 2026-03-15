@@ -153,8 +153,8 @@
           "waitFor": {
             "type": "string",
             "enum": ["load", "domcontentloaded", "networkidle"],
-            "default": "load",
-            "description": "Navigation wait condition. Use networkidle for JS-heavy SPAs."
+            "default": "networkidle",
+            "description": "Navigation wait condition. Defaults to networkidle — use load for faster captures on simple pages."
           }
         }
       },
