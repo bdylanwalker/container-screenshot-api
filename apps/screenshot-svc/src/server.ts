@@ -132,7 +132,7 @@ async function preparePageForCapture(page: Page): Promise<void> {
   // Disable all CSS transitions and animations so screenshot
   // captures final state rather than a mid-transition frame
   await page.evaluate(() => {
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.textContent = `
       *, *::before, *::after {
         transition: none !important;
@@ -185,6 +185,7 @@ app.post(
       width = VIEWPORT_DEFAULTS.width,
       height = VIEWPORT_DEFAULTS.height,
       waitFor = "networkidle",
+      extraWait = null, // ms to wait if needed for js to load
     } = req.body as ScreenshotRequestBody;
 
     const url = validateUrl(rawUrl);
@@ -218,20 +219,15 @@ app.post(
       });
 
       // Wait for networkidle + domcontentloaded states
-      await page.waitForLoadState('domcontentloaded');
-      await page.waitForLoadState('networkidle');
-
-      // Explicitly wait for nav to be visible if present on the page
-      // await page.waitForSelector('.c-main-navigation', {
-      //   state: 'visible',
-      //   timeout: 5000,
-      // }).catch(() => {}); // silently skip if nav doesn't exist on this page
+      await page.waitForLoadState("domcontentloaded");
+      await page.waitForLoadState("networkidle");
 
       // Kill transitions so screenshot catches final rendered state
       await preparePageForCapture(page);
 
-      // Extra settle time for JS-heavy pages after networkidle
-      await page.waitForTimeout(1500);
+      if (extraWait !== null) {
+        await page.waitForTimeout(extraWait);
+      }
 
       let imageBuffer: Buffer;
 
