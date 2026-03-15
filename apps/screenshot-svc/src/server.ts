@@ -225,13 +225,13 @@ app.post(
       } else {
         // ── Full page capture ─────────────────────────────────────────────────
         // 1. Scroll entire page to trigger lazy-loaded images/content
-        await autoScroll(page);
+        //await autoScroll(page);
 
         // 2. Wait for all images triggered during scroll to decode
-        await waitForImages(page);
+        //await waitForImages(page);
 
         // 3. Return to absolute top and settle before Playwright captures
-        await scrollToTopAndSettle(page);
+        //await scrollToTopAndSettle(page);
 
         // 4. Capture full scrollable height from top
         imageBuffer = await page.screenshot({ type: "png", fullPage: true });
