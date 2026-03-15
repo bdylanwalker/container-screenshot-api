@@ -39,7 +39,7 @@ if (!API_KEY) {
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const TIMEOUT_MS = 30_000;
-const VIEWPORT_DEFAULTS = { width: 1280, height: 800 };
+const VIEWPORT_DEFAULTS = { width: 1440, height: 900 };
 const VALID_WAIT_FOR = ["load", "domcontentloaded", "networkidle"] as const;
 
 // ── Browser pool (single shared instance) ─────────────────────────────────────
