@@ -128,6 +128,22 @@ async function waitForImages(page: Page): Promise<void> {
   });
 }
 
+async function preparePageForCapture(page: Page): Promise<void> {
+  // Disable all CSS transitions and animations so screenshot
+  // captures final state rather than a mid-transition frame
+  await page.evaluate(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      *, *::before, *::after {
+        transition: none !important;
+        animation: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  });
+  await page.waitForTimeout(300);
+}
+
 // ── URL validation ─────────────────────────────────────────────────────────────
 
 function validateUrl(raw: string): string | null {
@@ -201,6 +217,19 @@ app.post(
         timeout: TIMEOUT_MS,
       });
 
+      // Wait for networkidle + domcontentloaded states
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForLoadState('networkidle');
+
+      // Explicitly wait for nav to be visible if present on the page
+      await page.waitForSelector('.c-main-navigation', {
+        state: 'visible',
+        timeout: 5000,
+      }).catch(() => {}); // silently skip if nav doesn't exist on this page
+
+      // Kill transitions so screenshot catches final rendered state
+      await preparePageForCapture(page);
+
       // Extra settle time for JS-heavy pages after networkidle
       await page.waitForTimeout(1500);
 
@@ -225,13 +254,13 @@ app.post(
       } else {
         // ── Full page capture ─────────────────────────────────────────────────
         // 1. Scroll entire page to trigger lazy-loaded images/content
-        //await autoScroll(page);
+        await autoScroll(page);
 
         // 2. Wait for all images triggered during scroll to decode
-        //await waitForImages(page);
+        await waitForImages(page);
 
         // 3. Return to absolute top and settle before Playwright captures
-        //await scrollToTopAndSettle(page);
+        await scrollToTopAndSettle(page);
 
         // 4. Capture full scrollable height from top
         imageBuffer = await page.screenshot({ type: "png", fullPage: true });
