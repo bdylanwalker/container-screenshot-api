@@ -60,24 +60,15 @@ async function getBrowser(): Promise<Browser> {
   return browser;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Page helpers ───────────────────────────────────────────────────────────────
 
-function validateUrl(raw: string): string | null {
-  try {
-    const url = new URL(raw);
-    if (!["http:", "https:"].includes(url.protocol)) return null;
-    return url.href;
-  } catch {
-    return null;
-  }
-}
-
+// Scroll the full page to trigger lazy-loaded content
 async function autoScroll(page: Page): Promise<void> {
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => {
-      const distance = 100;        // px per scroll step
-      const delay = 100;           // ms between steps
-      const maxScrollTime = 15000; // bail out after 15s
+      const distance = 100;
+      const delay = 100;
+      const maxScrollTime = 15000;
       const start = Date.now();
       let lastHeight = 0;
 
@@ -92,8 +83,7 @@ async function autoScroll(page: Page): Promise<void> {
 
         if (timedOut || (reachedBottom && noNewContent)) {
           clearInterval(timer);
-          window.scrollTo(0, 0); // scroll back to top before screenshot
-          resolve();
+          resolve(); // scrollToTopAndSettle owns the return-to-top
         }
 
         lastHeight = currentHeight;
@@ -102,7 +92,55 @@ async function autoScroll(page: Page): Promise<void> {
   });
 }
 
-// ── App ────────────────────────────────────────────────────────────────────────
+// Scroll back to absolute top and verify before handing off to Playwright
+async function scrollToTopAndSettle(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  });
+
+  // Wait for scroll-linked animations / sticky header transitions to settle
+  await page.waitForTimeout(800);
+
+  // Verify we actually landed at 0 — retry once if not
+  const scrollY = await page.evaluate(() => window.scrollY);
+  if (scrollY > 0) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(500);
+  }
+}
+
+// Wait for all img elements to fully decode
+async function waitForImages(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const images = Array.from(document.querySelectorAll("img"));
+    await Promise.allSettled(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete) return resolve();
+            img.onload = () => resolve();
+            img.onerror = () => resolve(); // don't block on broken images
+          }),
+      ),
+    );
+  });
+}
+
+// ── URL validation ─────────────────────────────────────────────────────────────
+
+function validateUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+// ── Express app ────────────────────────────────────────────────────────────────
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -135,7 +173,9 @@ app.post(
 
     const url = validateUrl(rawUrl);
     if (!url) {
-      res.status(400).json({ error: "Invalid or missing url" } satisfies ErrorResponse);
+      res
+        .status(400)
+        .json({ error: "Invalid or missing url" } satisfies ErrorResponse);
       return;
     }
 
@@ -155,23 +195,21 @@ app.post(
       });
       const page = await context.newPage();
 
+      // Navigate and wait for network to settle
       await page.goto(url, {
-        waitUntil: "networkidle", // wait for network to go quiet
+        waitUntil: waitFor as (typeof VALID_WAIT_FOR)[number],
         timeout: TIMEOUT_MS,
       });
 
-      // Wait for any JS frameworks to finish rendering
-      await page.waitForLoadState("domcontentloaded");
-      await page.waitForLoadState("networkidle");
-
-      // Give JS-heavy SPAs a moment to settle after networkidle
+      // Extra settle time for JS-heavy pages after networkidle
       await page.waitForTimeout(1500);
 
       let imageBuffer: Buffer;
 
       if (selector) {
+        // ── Selector capture ─────────────────────────────────────────────────
         const element = await page.waitForSelector(selector, {
-          state: "visible", // wait until actually visible, not just in DOM
+          state: "visible",
           timeout: TIMEOUT_MS,
         });
         if (!element) {
@@ -180,29 +218,22 @@ app.post(
           } satisfies ErrorResponse);
           return;
         }
-        // Scroll element into view and wait for any lazy images inside it
+        // Scroll element into view and let any lazy content inside it load
         await element.scrollIntoViewIfNeeded();
         await page.waitForTimeout(500);
         imageBuffer = await element.screenshot({ type: "png" });
       } else {
-        // Scroll the full page to trigger lazy loading, then screenshot
+        // ── Full page capture ─────────────────────────────────────────────────
+        // 1. Scroll entire page to trigger lazy-loaded images/content
         await autoScroll(page);
 
-        // Wait for any images that loaded during scroll to fully render
-        await page.evaluate(async () => {
-          const images = Array.from(document.querySelectorAll("img"));
-          await Promise.allSettled(
-            images.map(
-              (img) =>
-                new Promise<void>((resolve) => {
-                  if (img.complete) return resolve();
-                  img.onload = () => resolve();
-                  img.onerror = () => resolve(); // don't block on broken images
-                }),
-            ),
-          );
-        });
+        // 2. Wait for all images triggered during scroll to decode
+        await waitForImages(page);
 
+        // 3. Return to absolute top and settle before Playwright captures
+        await scrollToTopAndSettle(page);
+
+        // 4. Capture full scrollable height from top
         imageBuffer = await page.screenshot({ type: "png", fullPage: true });
       }
 
@@ -227,7 +258,7 @@ app.post(
     } finally {
       if (context) await context.close().catch(() => {});
     }
-  }
+  },
 );
 
 // ── GET /health ────────────────────────────────────────────────────────────────
